@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>아일랜드 제로: 화산섬 그리드 마스터</title>
+    <style>
+        :root {
+            --bg-color: #1a1d24; --panel-color: #252932; --text-color: #e0e6ed;
+            --accent-color: #00bcd4; --danger-color: #ff5252; --warning-color: #ffd740; --success-color: #69f0ae;
+            --tab-bg: #1f232b; --tab-active: #3a3f4b;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 15px; display: flex; flex-direction: column; height: 95vh; overflow: hidden; }
+        
+        /* 상단 헤더 */
+        header { display: flex; justify-content: space-between; align-items: center; background: var(--panel-color); padding: 15px; border-radius: 8px; border-bottom: 2px solid #3a3f4b; margin-bottom: 10px; }
+        .header-stats { display: flex; gap: 20px; font-size: 1.1em; font-weight: bold; }
+        .stat-box { background: #121418; padding: 8px 15px; border-radius: 6px; border: 1px solid #3a3f4b; }
+        
+        /* 탭 메뉴 */
+        .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+        .tab-btn { background: var(--tab-bg); color: #a0aab5; border: 1px solid #3a3f4b; padding: 10px 20px; cursor: pointer; border-radius: 6px 6px 0 0; font-weight: bold; transition: 0.2s; }
+        .tab-btn.active { background: var(--accent-color); color: var(--bg-color); border-bottom: none; }
+        .tab-content { display: none; flex: 1; background: var(--panel-color); border: 1px solid #3a3f4b; border-radius: 0 6px 6px 6px; padding: 20px; overflow-y: auto; }
+        .tab-content.active { display: block; }
+
+        /* 공통 UI 요소 */
+        h2 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #3a3f4b; padding-bottom: 5px; font-size: 1.2em; }
+        .btn { background: #3a3f4b; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: #4f5666; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-buy { background: #2e7d32; } .btn-sell { background: #c62828; } .btn-action { background: #ff9800; color: #111; font-weight:bold; }
+        select, input { background: #121418; color: white; border: 1px solid #3a3f4b; padding: 5px; border-radius: 4px; }
+
+        /* 그리드(Grid) 레이아웃 */
+        .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        .panel { background: #1f232b; padding: 15px; border-radius: 8px; border: 1px solid #333; }
+        
+        /* 관제실 전용 */
+        .hz-display { font-size: 2.5em; font-weight: bold; font-family: monospace; text-align: center; margin: 10px 0; }
+        .alert-high { color: var(--danger-color); text-shadow: 0 0 10px var(--danger-color); }
+        .alert-low { color: var(--warning-color); text-shadow: 0 0 10px var(--warning-color); }
+        .alert-ok { color: var(--success-color); }
+
+        /* 테이블 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #3a3f4b; }
+        th { color: #a0aab5; }
+
+        /* 로그 세션 */
+        #logPanel { height: 120px; overflow-y: auto; background: #121418; border: 1px solid #3a3f4b; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 0.85em; color: #a0aab5; margin-top: 10px; }
+        .log-danger { color: var(--danger-color); } .log-success { color: var(--success-color); } .log-warning { color: var(--warning-color); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1 style="margin: 0; color: var(--accent-color); font-size: 1.5em;">⚡ ISLAND ZERO: 화산섬</h1>
+            <div style="font-size: 0.9em; color: #a0aab5; margin-top: 5px;">
+                <span id="timeDisplay">Day 1 - 00:00</span> | 날씨: <span id="weatherDisplay">☀️ 맑음</span>
+            </div>
+        </div>
+        <div class="header-stats">
+            <div class="stat-box">💰 예산: <span id="money" style="color:var(--success-color)">10000</span></div>
+            <div class="stat-box">🔬 연구(RP): <span id="rp" style="color:#b388ff">0</span></div>
+            <div class="stat-box">⚡ 전력: <span id="hz" class="alert-ok">60.00</span> Hz</div>
+        </div>
+        <div>
+            배속: 
+            <button class="btn" onclick="setSpeed(0)">일시정지</button>
+            <button class="btn" onclick="setSpeed(1)">1x</button>
+            <button class="btn" onclick="setSpeed(5)">5x</button>
+        </div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-grid')">🖥️ 전력 관제실</button>
+        <button class="tab-btn" onclick="switchTab('tab-industry')">🏭 산업 단지 (제련/연구)</button>
+        <button class="tab-btn" onclick="switchTab('tab-market')">🚢 무역항 (시장/물류)</button>
+    </div>
+
+    <div id="tab-grid" class="tab-content active">
+        <div class="grid-2col">
+            <div class="panel">
+                <h2>📈 실시간 계통 현황</h2>
+                <div id="hzContainer" class="hz-display alert-ok">60.00 Hz</div>
+                <div class="grid-2col" style="text-align: center; margin-top: 20px;">
+                    <div>
+                        <div style="color: #a0aab5;">수요 (Demand)</div>
+                        <div style="font-size: 1.5em; color: var(--danger-color);"><span id="demand">0</span> kW</div>
+                    </div>
+                    <div>
+                        <div style="color: #a0aab5;">공급 (Supply)</div>
+                        <div style="font-size: 1.5em; color: var(--success-color);"><span id="supply">0</span> kW</div>
+                    </div>
+                </div>
+                <p style="color: #a0aab5; font-size: 0.85em; margin-top: 20px;">* 디젤 발전소(9등급)가 가동 중입니다. 석탄을 소모합니다.</p>
+            </div>
+            
+            <div class="panel">
+                <h2>🏗️ 발전소 건설 (9등급 기준)</h2>
+                <table>
+                    <tr>
+                        <th>발전원</th>
+                        <th>효과</th>
+                        <th>필요 자원 (9등급)</th>
+                        <th>건설</th>
+                    </tr>
+                    <tr>
+                        <td>☀️ 태양광</td>
+                        <td>낮 +20kW</td>
+                        <td>돌 20, 돈 500</td>
+                        <td><button class="btn" onclick="buildPlant('solar')">건설</button></td>
+                    </tr>
+                    <tr>
+                        <td>🌬️ 풍력</td>
+                        <td>바람 +15kW</td>
+                        <td>돌 10, 목재 10, 돈 600</td>
+                        <td><button class="btn" onclick="buildPlant('wind')">건설</button></td>
+                    </tr>
+                </table>
+                <p style="font-size: 0.8em; color: #a0aab5;">* 보유 현황: 태양광 <span id="countSolar">0</span>개, 풍력 <span id="countWind">0</span>개</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-industry" class="tab-content">
+        <div class="grid-2col">
+            <div class="panel">
+                <h2>🔬 연구소 제어</h2>
+                <p>연구소는 가동 시 <b>항상 전력을 소모(-30kW)</b>하며, 주기적으로 RP(연구 포인트)를 생산합니다. 밤에 전력이 부족하면 꺼야 합니다.</p>
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #121418; padding: 15px; border-radius: 6px;">
+                    <span style="font-size: 1.2em; font-weight: bold;">상태: <span id="labStatus" style="color: var(--danger-color)">정지됨</span></span>
+                    <button class="btn btn-action" id="btnLab" onclick="toggleLab()">가동 시작 (30kW 소모)</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>🏭 공장 제련소 (과잉 전력 해소용)</h2>
+                <p>제련 시 <b>5초간 막대한 전력(-80kW)</b>을 소모합니다. 낮에 전력이 남아돌아 주파수가 폭발할 때(과전압 위기) 사용하세요!</p>
+                <table>
+                    <tr>
+                        <th>원재료 (10개)</th>
+                        <th>결과물</th>
+                        <th>등급 선택</th>
+                        <th>가동</th>
+                    </tr>
+                    <tr>
+                        <td>💧 물</td>
+                        <td>증류수(5), 미네랄(2)</td>
+                        <td><select id="tierWater" class="tier-select"></select></td>
+                        <td><button class="btn btn-action" onclick="refine('water', document.getElementById('tierWater').value)">제련</button></td>
+                    </tr>
+                    <tr>
+                        <td>🪨 돌</td>
+                        <td>석재(5), 미네랄(2), <b>석탄(3)</b></td>
+                        <td><select id="tierStone" class="tier-select"></select></td>
+                        <td><button class="btn btn-action" onclick="refine('stone', document.getElementById('tierStone').value)">제련</button></td>
+                    </tr>
+                    <tr>
+                        <td>🪵 나무</td>
+                        <td>목재(7), 톱밥(3)</td>
+                        <td><select id="tierWood" class="tier-select"></select></td>
+                        <td><button class="btn btn-action" onclick="refine('wood', document.getElementById('tierWood').value)">제련</button></td>
+                    </tr>
+                </table>
+                <div id="factoryStatus" style="margin-top: 10px; color: var(--warning-color); font-weight: bold; display: none;">⚠️ 공장 풀가동 중! (전력 대량 소모)</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-market" class="tab-content">
+        <div class="grid-2col">
+            <div class="panel">
+                <h2>🛒 실시간 무역 시장 (10개 단위)</h2>
+                <div style="margin-bottom: 10px;">
+                    조회 등급: <select id="marketTier" class="tier-select" onchange="renderMarket()"></select>
+                    <span style="font-size: 0.8em; color: #a0aab5; margin-left: 10px;">* 구매 시 5~14일 후 도착 (1% 침몰)</span>
+                </div>
+                <table id="marketTable">
+                    </table>
+            </div>
+
+            <div class="panel">
+                <h2>🚚 배달 추적 & 창고 (현재 조회 등급)</h2>
+                <div id="inventoryUI" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; background: #121418; padding: 10px; border-radius: 6px;">
+                    </div>
+                <h3>배송 현황</h3>
+                <div id="deliveryUI" style="font-size: 0.9em;">
+                    배송 중인 화물이 없습니다.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="logPanel"></div>
+
+<script>
+    // --- 1. 자원 및 레시피 데이터 ---
+    const resourcesInfo = {
+        water: { name: '💧 물', basePrice: 5 }, wood: { name: '🪵 나무', basePrice: 10 }, stone: { name: '🪨 돌', basePrice: 15 },
+        iron: { name: '🔩 철광석', basePrice: 30 }, insects: { name: '🐛 곤충', basePrice: 8 },
+        distilled: { name: '🧪 증류수', basePrice: 20 }, mineral: { name: '💎 미네랄', basePrice: 25 },
+        lumber: { name: '🪚 목재', basePrice: 25 }, sawdust: { name: '🌾 톱밥', basePrice: 5 },
+        stoneBlock: { name: '🧱 석재', basePrice: 35 }, coal: { name: '⛏️ 석탄', basePrice: 40 },
+        fertilizer: { name: '💩 비료', basePrice: 15 }, biofuel: { name: '🛢️ 바이오연료', basePrice: 50 },
+        ironIngot: { name: '🛡️ 철괴', basePrice: 80 }, slag: { name: '🌑 슬래그', basePrice: 2 }
+    };
+
+    // --- 2. 게임 상태 (State) ---
+    let game = {
+        time: { day: 1, hour: 8, minute: 0, speed: 1 },
+        weather: 'SUNNY',
+        money: 10000,
+        rp: 0,
+        grid: { hz: 60.00, baseDemand: 100, currentDemand: 100, currentSupply: 0 },
+        buildings: { solar: 0, wind: 0, labOn: false, factoryRunning: false },
+        prices: {}, // { water: { 9: 5, 8: 7 ... }, ... }
+        inventory: {}, // { water: { 9: 100, 8: 0 ... }, ... }
+        deliveries: []
+    };
+
+    // 인벤토리 & 가격 초기화 (1~9등급)
+    for (let key in resourcesInfo) {
+        game.inventory[key] = {}; game.prices[key] = {};
+        for (let i = 1; i <= 9; i++) {
+            game.inventory[key][i] = 0;
+            // 1등급일수록 비쌈 (9등급 대비 가격 배율 적용)
+            let multiplier = 1 + ((9 - i) * 0.5); 
+            game.prices[key][i] = Math.floor(resourcesInfo[key].basePrice * multiplier);
+        }
+    }
+    // 초기 지급 자원 (9등급)
+    game.inventory['water'][9] = 100; game.inventory['wood'][9] = 100; game.inventory['stone'][9] = 100; 
+    game.inventory['coal'][9] = 100; // 초기 디젤 발전기용
+
+    // --- 3. UI 헬퍼 함수 ---
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        event.currentTarget.classList.add('active');
+    }
+
+    function initSelects() {
+        let options = "";
+        for (let i = 9; i >= 1; i--) options += `<option value="${i}">${i}등급</option>`;
+        document.querySelectorAll('.tier-select').forEach(sel => sel.innerHTML = options);
+    }
+
+    function log(msg, type='') {
+        let cls = type ? `log-${type}` : '';
+        let d = `[Day ${game.time.day} ${String(game.time.hour).padStart(2,'0')}:${String(game.time.minute).padStart(2,'0')}]`;
+        document.getElementById('logPanel').innerHTML += `<div class="${cls}">${d} ${msg}</div>`;
+        let p = document.getElementById('logPanel'); p.scrollTop = p.scrollHeight;
+    }
+
+    function setSpeed(s) { game.time.speed = s; }
+
+    // --- 4. 게임 핵심 로직 (건설, 공장, 시장) ---
+    function buildPlant(type) {
+        if (type === 'solar' && game.inventory['stone'][9] >= 20 && game.money >= 500) {
+            game.inventory['stone'][9] -= 20; game.money -= 500; game.buildings.solar++;
+            log("태양광 발전소(9등급) 건설 완료!", "success");
+        } else if (type === 'wind' && game.inventory['stone'][9] >= 10 && game.inventory['wood'][9] >= 10 && game.money >= 600) {
+            game.inventory['stone'][9] -= 10; game.inventory['wood'][9] -= 10; game.money -= 600; game.buildings.wind++;
+            log("풍력 발전소(9등급) 건설 완료!", "success");
+        } else {
+            log("건설 실패: 자원 또는 예산 부족 (9등급 자원 확인)", "danger");
+        }
+        updateUI(); renderMarket();
+    }
+
+    function toggleLab() {
+        game.buildings.labOn = !game.buildings.labOn;
+        let btn = document.getElementById('btnLab');
+        let stat = document.getElementById('labStatus');
+        if (game.buildings.labOn) {
+            btn.innerText = "가동 중지 (전력 절약)"; btn.style.background = "#c62828";
+            stat.innerText = "가동 중 (-30kW)"; stat.style.color = "var(--success-color)";
+            log("연구소 가동: 전력 소모가 증가합니다.");
+        } else {
+            btn.innerText = "가동 시작 (30kW 소모)"; btn.style.background = "#ff9800";
+            stat.innerText = "정지됨"; stat.style.color = "var(--danger-color)";
+            log("연구소 정지: 전력을 확보했습니다.");
+        }
+    }
+
+    // 수요반응(DR) 공장 제련 로직
+    function refine(rawType, tier) {
+        if (game.buildings.factoryRunning) { log("공장이 이미 가동 중입니다!", "warning"); return; }
+        if (game.inventory[rawType][tier] < 10) { log(`${tier}등급 ${resourcesInfo[rawType].name}이(가) 부족합니다. (10개 필요)`, "danger"); return; }
+        
+        // 가동 시작 (전력 스파이크)
+        game.inventory[rawType][tier] -= 10;
+        game.buildings.factoryRunning = true;
+        document.getElementById('factoryStatus').style.display = 'block';
+        log(`[공장] ${tier}등급 ${resourcesInfo[rawType].name} 제련 시작! 전력망에 80kW의 과부하가 걸립니다.`, "warning");
+
+        // 5초(실제 시간) 후 완료. (게임 내 배속과 무관하게 긴장감 부여)
+        setTimeout(() => {
+            game.buildings.factoryRunning = false;
+            document.getElementById('factoryStatus').style.display = 'none';
+            
+            if (rawType === 'water') { game.inventory['distilled'][tier]+=5; game.inventory['mineral'][tier]+=2; }
+            if (rawType === 'stone') { game.inventory['stoneBlock'][tier]+=5; game.inventory['mineral'][tier]+=2; game.inventory['coal'][tier]+=3; }
+            if (rawType === 'wood') { game.inventory['lumber'][tier]+=7; game.inventory['sawdust'][tier]+=3; }
+            
+            log(`[공장] ${tier}등급 제련 완료! 자원 창고를 확인하세요.`, "success");
+            updateUI(); renderMarket();
+        }, 5000);
+    }
+
+    // 시장 구매/판매
+    function buy(key, tier) {
+        let p = game.prices[key][tier] * 10;
+        if (game.money >= p) {
+            game.money -= p;
+            let days = Math.floor(Math.random()*10)+5;
+            game.deliveries.push({ id: Math.random().toString(36).substr(2,4), type: key, tier: tier, amount: 10, daysLeft: days });
+            log(`[무역] ${tier}등급 ${resourcesInfo[key].name} 10개 주문 (도착 D-${days})`);
+            updateUI(); renderMarket();
+        } else log("돈이 부족합니다.", "danger");
+    }
+
+    function sell(key, tier) {
+        if (game.inventory[key][tier] >= 10) {
+            game.inventory[key][tier] -= 10;
+            let p = game.prices[key][tier] * 10;
+            game.money += p;
+            log(`[무역] ${tier}등급 ${resourcesInfo[key].name} 10개 판매 (+${p}원)`);
+            updateUI(); renderMarket();
+        } else log("판매할 자원이 부족합니다. (10개 단위)", "danger");
+    }
+
+    // --- 5. 게임 루프 (Tick 엔진) ---
+    function updateMarketPrices() {
+        for (let key in resourcesInfo) {
+            for (let i = 1; i <= 9; i++) {
+                let base = resourcesInfo[key].basePrice * (1 + (9 - i) * 0.5);
+                game.prices[key][i] = Math.floor(base * (1 + (Math.random()*0.4 - 0.2))); // -20% ~ +20%
+            }
+        }
+    }
+
+    function processDay() {
+        game.time.day++;
+        updateMarketPrices();
+        log(`--- Day ${game.time.day} 시작! 시장 가격이 변동되었습니다 ---`, "success");
+
+        // 배달 처리
+        for (let i = game.deliveries.length - 1; i >= 0; i--) {
+            let d = game.deliveries[i]; d.daysLeft--;
+            if (d.daysLeft <= 0) {
+                if (Math.random() < 0.01) log(`🚨 [사고] 폭풍으로 인해 ${d.tier}등급 ${resourcesInfo[d.type].name} 배송선이 침몰했습니다!`, "danger");
+                else { game.inventory[d.type][d.tier] += d.amount; log(`🚢 [도착] ${d.tier}등급 ${resourcesInfo[d.type].name} 창고 입고!`, "success"); }
+                game.deliveries.splice(i, 1);
+            }
+        }
+    }
+
+    function gameLoop() {
+        if (game.time.speed === 0) return;
+
+        // 1. 시간 흐름
+        game.time.minute += game.time.speed;
+        if (game.time.minute >= 60) {
+            game.time.minute = 0; game.time.hour++;
+            // 디젤 석탄 소모 (매 시간)
+            if (game.inventory['coal'][9] > 0) game.inventory['coal'][9]--;
+            else log("🚨 석탄 고갈! 디젤 발전기 정지 위기!", "danger");
+        }
+        if (game.time.hour >= 24) { game.time.hour = 0; processDay(); }
+
+        // 2. 수요(Demand) 계산
+        let d = game.grid.baseDemand;
+        if (game.time.hour >= 18 && game.time.hour <= 22) d += 40; // 저녁 피크
+        if (game.buildings.labOn) d += 30; // 연구소
+        if (game.buildings.factoryRunning) d += 80; // 공장 제련 스파이크
+        game.grid.currentDemand = d;
+
+        // 3. 공급(Supply) 계산
+        let s = 0;
+        if (game.inventory['coal'][9] > 0) s += 100; // 디젤 기저발전
+        // 태양광 (낮 한정)
+        if (game.time.hour >= 6 && game.time.hour <= 18) {
+            let eff = 1 - Math.abs(12 - game.time.hour)/6; 
+            s += game.buildings.solar * 20 * eff;
+        }
+        // 풍력 (랜덤)
+        s += game.buildings.wind * 15 * (0.5 + Math.random()*0.5);
+        game.grid.currentSupply = s;
+
+        // 4. 주파수(Hz) 물리 엔진
+        let diff = game.grid.currentSupply - game.grid.currentDemand;
+        let delta = diff * 0.005;
+        game.grid.hz += delta * (1 + (game.time.speed-1)*0.1);
+        game.grid.hz += (60.00 - game.grid.hz) * 0.02; // 복원력
+
+        // 페널티 로직
+        if (game.grid.hz > 61.5) { game.money -= 10 * game.time.speed; if(game.time.minute%10===0) log("🚨 과전압! 송전망 파괴 중 (-벌금)", "danger"); }
+        if (game.grid.hz < 58.5) { game.money -= 10 * game.time.speed; if(game.time.minute%10===0) log("🚨 저전압! 블랙아웃 발생 중 (-벌금)", "danger"); }
+        
+        // 5. 연구소 보상
+        if (game.buildings.labOn && game.time.minute === 0) game.rp += 1;
+
+        updateUI();
+        if (game.time.minute === 0) renderMarket(); // 매 시간 창고 갱신
+    }
+
+    // --- 6. 렌더링 함수 ---
+    function updateUI() {
+        document.getElementById('timeDisplay').innerText = `Day ${game.time.day} - ${String(game.time.hour).padStart(2,'0')}:${String(game.time.minute).padStart(2,'0')}`;
+        document.getElementById('money').innerText = Math.floor(game.money);
+        document.getElementById('rp').innerText = game.rp;
+        
+        document.getElementById('demand').innerText = Math.floor(game.grid.currentDemand);
+        document.getElementById('supply').innerText = Math.floor(game.grid.currentSupply);
+        document.getElementById('countSolar').innerText = game.buildings.solar;
+        document.getElementById('countWind').innerText = game.buildings.wind;
+
+        let hzStr = game.grid.hz.toFixed(2);
+        let hzContainer = document.getElementById('hzContainer');
+        document.getElementById('hz').innerText = hzStr;
+        hzContainer.innerText = hzStr + " Hz";
+        
+        hzContainer.className = "hz-display"; document.getElementById('hz').className = "";
+        if (game.grid.hz > 61.0) { hzContainer.classList.add('alert-high'); document.getElementById('hz').classList.add('alert-high'); }
+        else if (game.grid.hz < 59.0) { hzContainer.classList.add('alert-low'); document.getElementById('hz').classList.add('alert-low'); }
+        else { hzContainer.classList.add('alert-ok'); document.getElementById('hz').classList.add('alert-ok'); }
+    }
+
+    function renderMarket() {
+        let t = document.getElementById('marketTier').value || 9; // 선택된 등급
+        
+        // 시장 렌더링
+        let mHTML = `<tr><th>자원명</th><th>현재 단가(1개)</th><th>창고 보유량</th><th>거래 (10개 묶음)</th></tr>`;
+        let invHTML = "";
+        
+        for (let key in resourcesInfo) {
+            let res = resourcesInfo[key];
+            let price = game.prices[key][t];
+            let count = game.inventory[key][t];
+            
+            mHTML += `<tr>
+                <td>${res.name}</td><td>$${price}</td><td style="color:var(--accent-color); font-weight:bold;">${count}</td>
+                <td>
+                    <button class="btn btn-buy" onclick="buy('${key}', ${t})">구매 (-$${price*10})</button>
+                    <button class="btn btn-sell" onclick="sell('${key}', ${t})">판매 (+$${price*10})</button>
+                </td>
+            </tr>`;
+            if (count > 0) invHTML += `<div>${res.name}: <span style="color:white">${count}</span></div>`;
+        }
+        document.getElementById('marketTable').innerHTML = mHTML;
+        document.getElementById('inventoryUI').innerHTML = invHTML || "<div style='color:#a0aab5'>보유 자원이 없습니다.</div>";
+
+        // 배달 렌더링
+        let dHTML = "";
+        game.deliveries.forEach(d => {
+            dHTML += `<div style="background:#333; padding:5px; margin-bottom:5px; border-left:3px solid var(--accent-color);">
+                [D-${d.daysLeft}] ${d.tier}등급 ${resourcesInfo[d.type].name} ${d.amount}개 (운송장 #${d.id})
+            </div>`;
+        });
+        document.getElementById('deliveryUI').innerHTML = dHTML || "<div style='color:#a0aab5'>배송 중인 화물이 없습니다.</div>";
+    }
+
+    // 초기화 실행
+    initSelects(); updateMarketPrices(); updateUI(); renderMarket(); log("관제 시스템 부팅 완료. 전력망 관리를 시작합니다.", "success");
+    setInterval(gameLoop, 100); // 0.1초마다 루프 (게임 내 속도 제어 가능)
+</script>
+</body>
+</html>
