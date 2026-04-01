@@ -2,472 +2,330 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>아일랜드 제로: 화산섬 그리드 마스터</title>
+    <title>Smart Storm Navigation - Global Routing (Fixed Wrap Bug)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root {
-            --bg-color: #1a1d24; --panel-color: #252932; --text-color: #e0e6ed;
-            --accent-color: #00bcd4; --danger-color: #ff5252; --warning-color: #ffd740; --success-color: #69f0ae;
-            --tab-bg: #1f232b; --tab-active: #3a3f4b;
+        :root { --danger: #ff3333; --safe: #00ffaa; --ship: #ffff00; --typhoon: #ff88ff; --evade: #ffaa00; }
+        body { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; background: #111; color: #eee; }
+        #map { height: 100vh; width: 100%; background: #001122; }
+        #bridge-panel {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(5, 15, 30, 0.92); padding: 25px; border-radius: 12px;
+            border: 2px solid #335588; width: 380px; box-shadow: 0 0 20px rgba(0,0,0,1);
+            backdrop-filter: blur(5px);
         }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 15px; display: flex; flex-direction: column; height: 95vh; overflow: hidden; }
+        .status-bar { height: 10px; background: #222; border-radius: 5px; margin: 5px 0 15px; overflow: hidden; }
+        .bar-fill { height: 100%; width: 100%; transition: 0.1s linear; }
+        #engine-bar { background: linear-gradient(90deg, var(--safe), var(--danger)); }
+        #hull-bar { background: var(--safe); }
+        .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px; margin-bottom: 15px; }
+        .data-item { background: rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; }
+        .label { font-size: 11px; color: #888; display: block; margin-bottom: 3px; }
         
-        /* 상단 헤더 */
-        header { display: flex; justify-content: space-between; align-items: center; background: var(--panel-color); padding: 15px; border-radius: 8px; border-bottom: 2px solid #3a3f4b; margin-bottom: 10px; }
-        .header-stats { display: flex; gap: 20px; font-size: 1.1em; font-weight: bold; }
-        .stat-box { background: #121418; padding: 8px 15px; border-radius: 6px; border: 1px solid #3a3f4b; }
-        
-        /* 탭 메뉴 */
-        .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
-        .tab-btn { background: var(--tab-bg); color: #a0aab5; border: 1px solid #3a3f4b; padding: 10px 20px; cursor: pointer; border-radius: 6px 6px 0 0; font-weight: bold; transition: 0.2s; }
-        .tab-btn.active { background: var(--accent-color); color: var(--bg-color); border-bottom: none; }
-        .tab-content { display: none; flex: 1; background: var(--panel-color); border: 1px solid #3a3f4b; border-radius: 0 6px 6px 6px; padding: 20px; overflow-y: auto; }
-        .tab-content.active { display: block; }
-
-        /* 공통 UI 요소 */
-        h2 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #3a3f4b; padding-bottom: 5px; font-size: 1.2em; }
-        .btn { background: #3a3f4b; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
-        .btn:hover { background: #4f5666; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-buy { background: #2e7d32; } .btn-sell { background: #c62828; } .btn-action { background: #ff9800; color: #111; font-weight:bold; }
-        select, input { background: #121418; color: white; border: 1px solid #3a3f4b; padding: 5px; border-radius: 4px; }
-
-        /* 그리드(Grid) 레이아웃 */
-        .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .grid-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
-        .panel { background: #1f232b; padding: 15px; border-radius: 8px; border: 1px solid #333; }
-        
-        /* 관제실 전용 */
-        .hz-display { font-size: 2.5em; font-weight: bold; font-family: monospace; text-align: center; margin: 10px 0; }
-        .alert-high { color: var(--danger-color); text-shadow: 0 0 10px var(--danger-color); }
-        .alert-low { color: var(--warning-color); text-shadow: 0 0 10px var(--warning-color); }
-        .alert-ok { color: var(--success-color); }
-
-        /* 테이블 */
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
-        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #3a3f4b; }
-        th { color: #a0aab5; }
-
-        /* 로그 세션 */
-        #logPanel { height: 120px; overflow-y: auto; background: #121418; border: 1px solid #3a3f4b; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 0.85em; color: #a0aab5; margin-top: 10px; }
-        .log-danger { color: var(--danger-color); } .log-success { color: var(--success-color); } .log-warning { color: var(--warning-color); }
+        .port-select { width: 100%; padding: 8px; margin-bottom: 10px; background: #001122; color: #fff; border: 1px solid #335588; border-radius: 4px; font-weight: bold; }
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; }
+        .btn { flex: 1; padding: 15px; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-start { background: #0055ff; }
+        .btn-start:hover:not(:disabled) { background: #0077ff; }
+        .btn-start:disabled { background: #333; cursor: not-allowed; color: #777; }
+        .btn-reset { background: #cc3300; }
+        .btn-reset:hover { background: #ff4400; }
     </style>
 </head>
 <body>
 
-    <header>
-        <div>
-            <h1 style="margin: 0; color: var(--accent-color); font-size: 1.5em;">⚡ ISLAND ZERO: 화산섬</h1>
-            <div style="font-size: 0.9em; color: #a0aab5; margin-top: 5px;">
-                <span id="timeDisplay">Day 1 - 00:00</span> | 날씨: <span id="weatherDisplay">☀️ 맑음</span>
-            </div>
-        </div>
-        <div class="header-stats">
-            <div class="stat-box">💰 예산: <span id="money" style="color:var(--success-color)">10000</span></div>
-            <div class="stat-box">🔬 연구(RP): <span id="rp" style="color:#b388ff">0</span></div>
-            <div class="stat-box">⚡ 전력: <span id="hz" class="alert-ok">60.00</span> Hz</div>
-        </div>
-        <div>
-            배속: 
-            <button class="btn" onclick="setSpeed(0)">일시정지</button>
-            <button class="btn" onclick="setSpeed(1)">1x</button>
-            <button class="btn" onclick="setSpeed(5)">5x</button>
-        </div>
-    </header>
-
-    <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('tab-grid')">🖥️ 전력 관제실</button>
-        <button class="tab-btn" onclick="switchTab('tab-industry')">🏭 산업 단지 (제련/연구)</button>
-        <button class="tab-btn" onclick="switchTab('tab-market')">🚢 무역항 (시장/물류)</button>
+<div id="bridge-panel">
+    <h2 style="margin:0 0 15px; color:var(--safe); font-size:1.4rem;">🚢 GLOBAL AUTOPILOT</h2>
+    
+    <div id="mission-text" style="font-size: 13px; margin-bottom: 15px; color: #ccc; line-height: 1.5; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px;">
+        1. 출항지와 목적지를 선택하십시오.<br>
+        2. 지도에 <b>태풍의 예상 경로</b>를 클릭하여 그리십시오.<br>
+        * AI가 육지를 알아서 피해 가며, 태풍 접근 시 피항합니다.
     </div>
 
-    <div id="tab-grid" class="tab-content active">
-        <div class="grid-2col">
-            <div class="panel">
-                <h2>📈 실시간 계통 현황</h2>
-                <div id="hzContainer" class="hz-display alert-ok">60.00 Hz</div>
-                <div class="grid-2col" style="text-align: center; margin-top: 20px;">
-                    <div>
-                        <div style="color: #a0aab5;">수요 (Demand)</div>
-                        <div style="font-size: 1.5em; color: var(--danger-color);"><span id="demand">0</span> kW</div>
-                    </div>
-                    <div>
-                        <div style="color: #a0aab5;">공급 (Supply)</div>
-                        <div style="font-size: 1.5em; color: var(--success-color);"><span id="supply">0</span> kW</div>
-                    </div>
-                </div>
-                <p style="color: #a0aab5; font-size: 0.85em; margin-top: 20px;">* 디젤 발전소(9등급)가 가동 중입니다. 석탄을 소모합니다.</p>
-            </div>
-            
-            <div class="panel">
-                <h2>🏗️ 발전소 건설 (9등급 기준)</h2>
-                <table>
-                    <tr>
-                        <th>발전원</th>
-                        <th>효과</th>
-                        <th>필요 자원 (9등급)</th>
-                        <th>건설</th>
-                    </tr>
-                    <tr>
-                        <td>☀️ 태양광</td>
-                        <td>낮 +20kW</td>
-                        <td>돌 20, 돈 500</td>
-                        <td><button class="btn" onclick="buildPlant('solar')">건설</button></td>
-                    </tr>
-                    <tr>
-                        <td>🌬️ 풍력</td>
-                        <td>바람 +15kW</td>
-                        <td>돌 10, 목재 10, 돈 600</td>
-                        <td><button class="btn" onclick="buildPlant('wind')">건설</button></td>
-                    </tr>
-                </table>
-                <p style="font-size: 0.8em; color: #a0aab5;">* 보유 현황: 태양광 <span id="countSolar">0</span>개, 풍력 <span id="countWind">0</span>개</p>
-            </div>
-        </div>
+    <select id="start-port" class="port-select" onchange="updatePorts()">
+        <option value="" disabled selected>출발 항구 선택</option>
+        <option value="35.1,129.6">🇰🇷 대한민국 부산항</option>
+        <option value="35.6,140.2">🇯🇵 일본 도쿄항</option>
+        <option value="31.2,122.0">🇨🇳 중국 상하이항</option>
+        <option value="1.2,104.2">🇸🇬 싱가포르항</option>
+        <option value="14.5,121.0">🇵🇭 필리핀 마닐라항</option>
+        <option value="-33.8,151.5">🇦🇺 호주 시드니항</option>
+        <option value="21.3,-157.8">🇺🇸 하와이 호놀룰루항</option>
+        <option value="33.7,-118.5">🇺🇸 미국 LA 롱비치항</option>
+    </select>
+
+    <select id="end-port" class="port-select" onchange="updatePorts()">
+        <option value="" disabled selected>목적지 항구 선택</option>
+        <option value="35.1,129.6">🇰🇷 대한민국 부산항</option>
+        <option value="35.6,140.2">🇯🇵 일본 도쿄항</option>
+        <option value="31.2,122.0">🇨🇳 중국 상하이항</option>
+        <option value="1.2,104.2">🇸🇬 싱가포르항</option>
+        <option value="14.5,121.0">🇵🇭 필리핀 마닐라항</option>
+        <option value="-33.8,151.5">🇦🇺 호주 시드니항</option>
+        <option value="21.3,-157.8">🇺🇸 하와이 호놀룰루항</option>
+        <option value="33.7,-118.5">🇺🇸 미국 LA 롱비치항</option>
+    </select>
+
+    <div class="data-grid">
+        <div class="data-item"><span class="label">SHIP SPEED</span><span id="txt-speed" style="font-weight:bold;">0.0 kts</span></div>
+        <div class="data-item"><span class="label">WIND SPEED</span><span id="txt-wind" style="font-weight:bold;">0.0 m/s</span></div>
+        <div class="data-item" style="grid-column: span 2;"><span class="label">AUTOPILOT STATUS</span><span id="txt-status" style="font-weight:bold; color:var(--ship);">STANDBY</span></div>
     </div>
 
-    <div id="tab-industry" class="tab-content">
-        <div class="grid-2col">
-            <div class="panel">
-                <h2>🔬 연구소 제어</h2>
-                <p>연구소는 가동 시 <b>항상 전력을 소모(-30kW)</b>하며, 주기적으로 RP(연구 포인트)를 생산합니다. 밤에 전력이 부족하면 꺼야 합니다.</p>
-                <div style="display: flex; justify-content: space-between; align-items: center; background: #121418; padding: 15px; border-radius: 6px;">
-                    <span style="font-size: 1.2em; font-weight: bold;">상태: <span id="labStatus" style="color: var(--danger-color)">정지됨</span></span>
-                    <button class="btn btn-action" id="btnLab" onclick="toggleLab()">가동 시작 (30kW 소모)</button>
-                </div>
-            </div>
+    <div class="label">ENGINE LOAD</div>
+    <div class="status-bar"><div id="engine-bar" class="bar-fill" style="width: 0%;"></div></div>
+    
+    <div class="label">HULL INTEGRITY</div>
+    <div class="status-bar"><div id="hull-bar" class="bar-fill" style="width: 100%;"></div></div>
 
-            <div class="panel">
-                <h2>🏭 공장 제련소 (과잉 전력 해소용)</h2>
-                <p>제련 시 <b>5초간 막대한 전력(-80kW)</b>을 소모합니다. 낮에 전력이 남아돌아 주파수가 폭발할 때(과전압 위기) 사용하세요!</p>
-                <table>
-                    <tr>
-                        <th>원재료 (10개)</th>
-                        <th>결과물</th>
-                        <th>등급 선택</th>
-                        <th>가동</th>
-                    </tr>
-                    <tr>
-                        <td>💧 물</td>
-                        <td>증류수(5), 미네랄(2)</td>
-                        <td><select id="tierWater" class="tier-select"></select></td>
-                        <td><button class="btn btn-action" onclick="refine('water', document.getElementById('tierWater').value)">제련</button></td>
-                    </tr>
-                    <tr>
-                        <td>🪨 돌</td>
-                        <td>석재(5), 미네랄(2), <b>석탄(3)</b></td>
-                        <td><select id="tierStone" class="tier-select"></select></td>
-                        <td><button class="btn btn-action" onclick="refine('stone', document.getElementById('tierStone').value)">제련</button></td>
-                    </tr>
-                    <tr>
-                        <td>🪵 나무</td>
-                        <td>목재(7), 톱밥(3)</td>
-                        <td><select id="tierWood" class="tier-select"></select></td>
-                        <td><button class="btn btn-action" onclick="refine('wood', document.getElementById('tierWood').value)">제련</button></td>
-                    </tr>
-                </table>
-                <div id="factoryStatus" style="margin-top: 10px; color: var(--warning-color); font-weight: bold; display: none;">⚠️ 공장 풀가동 중! (전력 대량 소모)</div>
-            </div>
-        </div>
+    <div class="btn-group">
+        <button id="start-btn" class="btn btn-start" onclick="engage()" disabled>항해 개시</button>
+        <button class="btn btn-reset" onclick="location.reload()">초기화</button>
     </div>
+</div>
 
-    <div id="tab-market" class="tab-content">
-        <div class="grid-2col">
-            <div class="panel">
-                <h2>🛒 실시간 무역 시장 (10개 단위)</h2>
-                <div style="margin-bottom: 10px;">
-                    조회 등급: <select id="marketTier" class="tier-select" onchange="renderMarket()"></select>
-                    <span style="font-size: 0.8em; color: #a0aab5; margin-left: 10px;">* 구매 시 5~14일 후 도착 (1% 침몰)</span>
-                </div>
-                <table id="marketTable">
-                    </table>
-            </div>
+<div id="map"></div>
 
-            <div class="panel">
-                <h2>🚚 배달 추적 & 창고 (현재 조회 등급)</h2>
-                <div id="inventoryUI" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; background: #121418; padding: 10px; border-radius: 6px;">
-                    </div>
-                <h3>배송 현황</h3>
-                <div id="deliveryUI" style="font-size: 0.9em;">
-                    배송 중인 화물이 없습니다.
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="logPanel"></div>
-
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // --- 1. 자원 및 레시피 데이터 ---
-    const resourcesInfo = {
-        water: { name: '💧 물', basePrice: 5 }, wood: { name: '🪵 나무', basePrice: 10 }, stone: { name: '🪨 돌', basePrice: 15 },
-        iron: { name: '🔩 철광석', basePrice: 30 }, insects: { name: '🐛 곤충', basePrice: 8 },
-        distilled: { name: '🧪 증류수', basePrice: 20 }, mineral: { name: '💎 미네랄', basePrice: 25 },
-        lumber: { name: '🪚 목재', basePrice: 25 }, sawdust: { name: '🌾 톱밥', basePrice: 5 },
-        stoneBlock: { name: '🧱 석재', basePrice: 35 }, coal: { name: '⛏️ 석탄', basePrice: 40 },
-        fertilizer: { name: '💩 비료', basePrice: 15 }, biofuel: { name: '🛢️ 바이오연료', basePrice: 50 },
-        ironIngot: { name: '🛡️ 철괴', basePrice: 80 }, slag: { name: '🌑 슬래그', basePrice: 2 }
-    };
+    // [버그 수정 구역] 지도 무한 반복 현상 끄기 & 바운더리 제한
+    const map = L.map('map', {
+        maxBounds: [[-90, -180], [90, 180]], // 시야를 하나의 지구본으로 제한
+        maxBoundsViscosity: 1.0,             // 경계선 밖으로 드래그 금지
+        worldCopyJump: false
+    }).setView([20, 140], 3);
 
-    // --- 2. 게임 상태 (State) ---
-    let game = {
-        time: { day: 1, hour: 8, minute: 0, speed: 1 },
-        weather: 'SUNNY',
-        money: 10000,
-        rp: 0,
-        grid: { hz: 60.00, baseDemand: 100, currentDemand: 100, currentSupply: 0 },
-        buildings: { solar: 0, wind: 0, labOn: false, factoryRunning: false },
-        prices: {}, // { water: { 9: 5, 8: 7 ... }, ... }
-        inventory: {}, // { water: { 9: 100, 8: 0 ... }, ... }
-        deliveries: []
-    };
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 13, 
+        noWrap: true, // 핵심: 타일 무한 복사 방지
+        bounds: [[-90, -180], [90, 180]],
+        attribution: 'Tiles &copy; Esri &mdash; Ocean Base'
+    }).addTo(map);
 
-    // 인벤토리 & 가격 초기화 (1~9등급)
-    for (let key in resourcesInfo) {
-        game.inventory[key] = {}; game.prices[key] = {};
-        for (let i = 1; i <= 9; i++) {
-            game.inventory[key][i] = 0;
-            // 1등급일수록 비쌈 (9등급 대비 가격 배율 적용)
-            let multiplier = 1 + ((9 - i) * 0.5); 
-            game.prices[key][i] = Math.floor(resourcesInfo[key].basePrice * multiplier);
-        }
-    }
-    // 초기 지급 자원 (9등급)
-    game.inventory['water'][9] = 100; game.inventory['wood'][9] = 100; game.inventory['stone'][9] = 100; 
-    game.inventory['coal'][9] = 100; // 초기 디젤 발전기용
+    let shipPos = null, targetPos = null, typhPoints = [];
+    let shipMkr, targetMkr, shipPath, typhLine;
+    let typhOuter, typhInner, typhEye;
+    let stage = 0; 
 
-    // --- 3. UI 헬퍼 함수 ---
-    function switchTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        document.getElementById(tabId).classList.add('active');
-        event.currentTarget.classList.add('active');
+    // 주요 대륙 경계선 (경도 정규화 적용)
+    function isGrounded(lat, lng) {
+        let nLng = lng;
+        while(nLng > 180) nLng -= 360;
+        while(nLng < -180) nLng += 360;
+
+        if (lat > 20 && nLng > 90 && nLng < 121.5) return true; // 중국/동남아
+        if (lat > 34.5 && lat < 43 && nLng > 125.5 && nLng < 129.5) return true; // 한반도
+        if (lat > 33 && lat < 41 && nLng > 130 && nLng < 140) return true; // 일본
+        if (lat > 22 && lat < 25.5 && nLng > 120 && nLng < 122) return true; // 대만
+        if (lat < -10 && nLng > 110 && nLng < 155) return true; // 호주
+        if (lat > 15 && lat < 70 && nLng > -130 && nLng < -80) return true; // 북미
+        return false;
     }
 
-    function initSelects() {
-        let options = "";
-        for (let i = 9; i >= 1; i--) options += `<option value="${i}">${i}등급</option>`;
-        document.querySelectorAll('.tier-select').forEach(sel => sel.innerHTML = options);
-    }
-
-    function log(msg, type='') {
-        let cls = type ? `log-${type}` : '';
-        let d = `[Day ${game.time.day} ${String(game.time.hour).padStart(2,'0')}:${String(game.time.minute).padStart(2,'0')}]`;
-        document.getElementById('logPanel').innerHTML += `<div class="${cls}">${d} ${msg}</div>`;
-        let p = document.getElementById('logPanel'); p.scrollTop = p.scrollHeight;
-    }
-
-    function setSpeed(s) { game.time.speed = s; }
-
-    // --- 4. 게임 핵심 로직 (건설, 공장, 시장) ---
-    function buildPlant(type) {
-        if (type === 'solar' && game.inventory['stone'][9] >= 20 && game.money >= 500) {
-            game.inventory['stone'][9] -= 20; game.money -= 500; game.buildings.solar++;
-            log("태양광 발전소(9등급) 건설 완료!", "success");
-        } else if (type === 'wind' && game.inventory['stone'][9] >= 10 && game.inventory['wood'][9] >= 10 && game.money >= 600) {
-            game.inventory['stone'][9] -= 10; game.inventory['wood'][9] -= 10; game.money -= 600; game.buildings.wind++;
-            log("풍력 발전소(9등급) 건설 완료!", "success");
-        } else {
-            log("건설 실패: 자원 또는 예산 부족 (9등급 자원 확인)", "danger");
-        }
-        updateUI(); renderMarket();
-    }
-
-    function toggleLab() {
-        game.buildings.labOn = !game.buildings.labOn;
-        let btn = document.getElementById('btnLab');
-        let stat = document.getElementById('labStatus');
-        if (game.buildings.labOn) {
-            btn.innerText = "가동 중지 (전력 절약)"; btn.style.background = "#c62828";
-            stat.innerText = "가동 중 (-30kW)"; stat.style.color = "var(--success-color)";
-            log("연구소 가동: 전력 소모가 증가합니다.");
-        } else {
-            btn.innerText = "가동 시작 (30kW 소모)"; btn.style.background = "#ff9800";
-            stat.innerText = "정지됨"; stat.style.color = "var(--danger-color)";
-            log("연구소 정지: 전력을 확보했습니다.");
-        }
-    }
-
-    // 수요반응(DR) 공장 제련 로직
-    function refine(rawType, tier) {
-        if (game.buildings.factoryRunning) { log("공장이 이미 가동 중입니다!", "warning"); return; }
-        if (game.inventory[rawType][tier] < 10) { log(`${tier}등급 ${resourcesInfo[rawType].name}이(가) 부족합니다. (10개 필요)`, "danger"); return; }
+    function updatePorts() {
+        const startVal = document.getElementById('start-port').value;
+        const endVal = document.getElementById('end-port').value;
         
-        // 가동 시작 (전력 스파이크)
-        game.inventory[rawType][tier] -= 10;
-        game.buildings.factoryRunning = true;
-        document.getElementById('factoryStatus').style.display = 'block';
-        log(`[공장] ${tier}등급 ${resourcesInfo[rawType].name} 제련 시작! 전력망에 80kW의 과부하가 걸립니다.`, "warning");
-
-        // 5초(실제 시간) 후 완료. (게임 내 배속과 무관하게 긴장감 부여)
-        setTimeout(() => {
-            game.buildings.factoryRunning = false;
-            document.getElementById('factoryStatus').style.display = 'none';
-            
-            if (rawType === 'water') { game.inventory['distilled'][tier]+=5; game.inventory['mineral'][tier]+=2; }
-            if (rawType === 'stone') { game.inventory['stoneBlock'][tier]+=5; game.inventory['mineral'][tier]+=2; game.inventory['coal'][tier]+=3; }
-            if (rawType === 'wood') { game.inventory['lumber'][tier]+=7; game.inventory['sawdust'][tier]+=3; }
-            
-            log(`[공장] ${tier}등급 제련 완료! 자원 창고를 확인하세요.`, "success");
-            updateUI(); renderMarket();
-        }, 5000);
-    }
-
-    // 시장 구매/판매
-    function buy(key, tier) {
-        let p = game.prices[key][tier] * 10;
-        if (game.money >= p) {
-            game.money -= p;
-            let days = Math.floor(Math.random()*10)+5;
-            game.deliveries.push({ id: Math.random().toString(36).substr(2,4), type: key, tier: tier, amount: 10, daysLeft: days });
-            log(`[무역] ${tier}등급 ${resourcesInfo[key].name} 10개 주문 (도착 D-${days})`);
-            updateUI(); renderMarket();
-        } else log("돈이 부족합니다.", "danger");
-    }
-
-    function sell(key, tier) {
-        if (game.inventory[key][tier] >= 10) {
-            game.inventory[key][tier] -= 10;
-            let p = game.prices[key][tier] * 10;
-            game.money += p;
-            log(`[무역] ${tier}등급 ${resourcesInfo[key].name} 10개 판매 (+${p}원)`);
-            updateUI(); renderMarket();
-        } else log("판매할 자원이 부족합니다. (10개 단위)", "danger");
-    }
-
-    // --- 5. 게임 루프 (Tick 엔진) ---
-    function updateMarketPrices() {
-        for (let key in resourcesInfo) {
-            for (let i = 1; i <= 9; i++) {
-                let base = resourcesInfo[key].basePrice * (1 + (9 - i) * 0.5);
-                game.prices[key][i] = Math.floor(base * (1 + (Math.random()*0.4 - 0.2))); // -20% ~ +20%
+        if (startVal && endVal) {
+            if (startVal === endVal) {
+                alert("출발지와 목적지가 같습니다. 다시 선택해주세요.");
+                return;
             }
-        }
-    }
 
-    function processDay() {
-        game.time.day++;
-        updateMarketPrices();
-        log(`--- Day ${game.time.day} 시작! 시장 가격이 변동되었습니다 ---`, "success");
+            shipPos = startVal.split(',').map(Number);
+            targetPos = endVal.split(',').map(Number);
 
-        // 배달 처리
-        for (let i = game.deliveries.length - 1; i >= 0; i--) {
-            let d = game.deliveries[i]; d.daysLeft--;
-            if (d.daysLeft <= 0) {
-                if (Math.random() < 0.01) log(`🚨 [사고] 폭풍으로 인해 ${d.tier}등급 ${resourcesInfo[d.type].name} 배송선이 침몰했습니다!`, "danger");
-                else { game.inventory[d.type][d.tier] += d.amount; log(`🚢 [도착] ${d.tier}등급 ${resourcesInfo[d.type].name} 창고 입고!`, "success"); }
-                game.deliveries.splice(i, 1);
-            }
-        }
-    }
+            if (shipMkr) map.removeLayer(shipMkr);
+            if (targetMkr) map.removeLayer(targetMkr);
+            if (shipPath) map.removeLayer(shipPath);
 
-    function gameLoop() {
-        if (game.time.speed === 0) return;
-
-        // 1. 시간 흐름
-        game.time.minute += game.time.speed;
-        if (game.time.minute >= 60) {
-            game.time.minute = 0; game.time.hour++;
-            // 디젤 석탄 소모 (매 시간)
-            if (game.inventory['coal'][9] > 0) game.inventory['coal'][9]--;
-            else log("🚨 석탄 고갈! 디젤 발전기 정지 위기!", "danger");
-        }
-        if (game.time.hour >= 24) { game.time.hour = 0; processDay(); }
-
-        // 2. 수요(Demand) 계산
-        let d = game.grid.baseDemand;
-        if (game.time.hour >= 18 && game.time.hour <= 22) d += 40; // 저녁 피크
-        if (game.buildings.labOn) d += 30; // 연구소
-        if (game.buildings.factoryRunning) d += 80; // 공장 제련 스파이크
-        game.grid.currentDemand = d;
-
-        // 3. 공급(Supply) 계산
-        let s = 0;
-        if (game.inventory['coal'][9] > 0) s += 100; // 디젤 기저발전
-        // 태양광 (낮 한정)
-        if (game.time.hour >= 6 && game.time.hour <= 18) {
-            let eff = 1 - Math.abs(12 - game.time.hour)/6; 
-            s += game.buildings.solar * 20 * eff;
-        }
-        // 풍력 (랜덤)
-        s += game.buildings.wind * 15 * (0.5 + Math.random()*0.5);
-        game.grid.currentSupply = s;
-
-        // 4. 주파수(Hz) 물리 엔진
-        let diff = game.grid.currentSupply - game.grid.currentDemand;
-        let delta = diff * 0.005;
-        game.grid.hz += delta * (1 + (game.time.speed-1)*0.1);
-        game.grid.hz += (60.00 - game.grid.hz) * 0.02; // 복원력
-
-        // 페널티 로직
-        if (game.grid.hz > 61.5) { game.money -= 10 * game.time.speed; if(game.time.minute%10===0) log("🚨 과전압! 송전망 파괴 중 (-벌금)", "danger"); }
-        if (game.grid.hz < 58.5) { game.money -= 10 * game.time.speed; if(game.time.minute%10===0) log("🚨 저전압! 블랙아웃 발생 중 (-벌금)", "danger"); }
-        
-        // 5. 연구소 보상
-        if (game.buildings.labOn && game.time.minute === 0) game.rp += 1;
-
-        updateUI();
-        if (game.time.minute === 0) renderMarket(); // 매 시간 창고 갱신
-    }
-
-    // --- 6. 렌더링 함수 ---
-    function updateUI() {
-        document.getElementById('timeDisplay').innerText = `Day ${game.time.day} - ${String(game.time.hour).padStart(2,'0')}:${String(game.time.minute).padStart(2,'0')}`;
-        document.getElementById('money').innerText = Math.floor(game.money);
-        document.getElementById('rp').innerText = game.rp;
-        
-        document.getElementById('demand').innerText = Math.floor(game.grid.currentDemand);
-        document.getElementById('supply').innerText = Math.floor(game.grid.currentSupply);
-        document.getElementById('countSolar').innerText = game.buildings.solar;
-        document.getElementById('countWind').innerText = game.buildings.wind;
-
-        let hzStr = game.grid.hz.toFixed(2);
-        let hzContainer = document.getElementById('hzContainer');
-        document.getElementById('hz').innerText = hzStr;
-        hzContainer.innerText = hzStr + " Hz";
-        
-        hzContainer.className = "hz-display"; document.getElementById('hz').className = "";
-        if (game.grid.hz > 61.0) { hzContainer.classList.add('alert-high'); document.getElementById('hz').classList.add('alert-high'); }
-        else if (game.grid.hz < 59.0) { hzContainer.classList.add('alert-low'); document.getElementById('hz').classList.add('alert-low'); }
-        else { hzContainer.classList.add('alert-ok'); document.getElementById('hz').classList.add('alert-ok'); }
-    }
-
-    function renderMarket() {
-        let t = document.getElementById('marketTier').value || 9; // 선택된 등급
-        
-        // 시장 렌더링
-        let mHTML = `<tr><th>자원명</th><th>현재 단가(1개)</th><th>창고 보유량</th><th>거래 (10개 묶음)</th></tr>`;
-        let invHTML = "";
-        
-        for (let key in resourcesInfo) {
-            let res = resourcesInfo[key];
-            let price = game.prices[key][t];
-            let count = game.inventory[key][t];
+            shipMkr = L.circleMarker(shipPos, {radius: 7, color: '#ffff00', fillOpacity: 1, zIndexOffset: 1000}).addTo(map);
+            targetMkr = L.marker(targetPos).addTo(map).bindPopup("목적지").openPopup();
+            shipPath = L.polyline([shipPos], {color: '#ffff00', weight: 3, opacity: 0.8}).addTo(map);
             
-            mHTML += `<tr>
-                <td>${res.name}</td><td>$${price}</td><td style="color:var(--accent-color); font-weight:bold;">${count}</td>
-                <td>
-                    <button class="btn btn-buy" onclick="buy('${key}', ${t})">구매 (-$${price*10})</button>
-                    <button class="btn btn-sell" onclick="sell('${key}', ${t})">판매 (+$${price*10})</button>
-                </td>
-            </tr>`;
-            if (count > 0) invHTML += `<div>${res.name}: <span style="color:white">${count}</span></div>`;
+            stage = 1; 
+            map.fitBounds([shipPos, targetPos], {padding: [50, 50]});
         }
-        document.getElementById('marketTable').innerHTML = mHTML;
-        document.getElementById('inventoryUI').innerHTML = invHTML || "<div style='color:#a0aab5'>보유 자원이 없습니다.</div>";
-
-        // 배달 렌더링
-        let dHTML = "";
-        game.deliveries.forEach(d => {
-            dHTML += `<div style="background:#333; padding:5px; margin-bottom:5px; border-left:3px solid var(--accent-color);">
-                [D-${d.daysLeft}] ${d.tier}등급 ${resourcesInfo[d.type].name} ${d.amount}개 (운송장 #${d.id})
-            </div>`;
-        });
-        document.getElementById('deliveryUI').innerHTML = dHTML || "<div style='color:#a0aab5'>배송 중인 화물이 없습니다.</div>";
     }
 
-    // 초기화 실행
-    initSelects(); updateMarketPrices(); updateUI(); renderMarket(); log("관제 시스템 부팅 완료. 전력망 관리를 시작합니다.", "success");
-    setInterval(gameLoop, 100); // 0.1초마다 루프 (게임 내 속도 제어 가능)
+    map.on('click', e => {
+        if (stage !== 1) return; 
+        
+        // [버그 수정 구역] 마우스 클릭 경도를 -180 ~ 180 사이로 무조건 환산
+        let cleanLng = e.latlng.lng;
+        while (cleanLng > 180) cleanLng -= 360;
+        while (cleanLng < -180) cleanLng += 360;
+        const p = [e.latlng.lat, cleanLng];
+        
+        typhPoints.push(p);
+        if (!typhLine) typhLine = L.polyline([], {color: '#ff4444', dashArray: '5,10'}).addTo(map);
+        typhLine.addLatLng(p);
+        L.circleMarker(p, {radius: 4, color: '#ff4444', fillOpacity: 1}).addTo(map);
+        
+        if (typhPoints.length >= 2) {
+            document.getElementById('start-btn').disabled = false;
+        }
+    });
+
+    function engage() {
+        document.getElementById('start-btn').disabled = true;
+        document.getElementById('start-port').disabled = true;
+        document.getElementById('end-port').disabled = true;
+        
+        const startP = typhPoints[0];
+        typhOuter = L.circle(startP, {radius: 400000, color: 'transparent', fillColor: '#5555ff', fillOpacity: 0.1}).addTo(map);
+        typhInner = L.circle(startP, {radius: 120000, color: 'transparent', fillColor: '#ff3333', fillOpacity: 0.2}).addTo(map);
+        typhEye   = L.circle(startP, {radius: 20000, color: '#ffffff', weight: 2, fillColor: '#000000', fillOpacity: 0.6}).addTo(map);
+
+        let tStep = 0;
+        let curTyph = [...typhPoints[0]]; 
+        let hull = 100;
+        let isEvadeMode = false; 
+
+        const sim = setInterval(() => {
+            if (tStep >= typhPoints.length - 1) {
+                curTyph = [999, 999]; 
+            } else {
+                const pTarget = typhPoints[tStep + 1];
+                const dyT = pTarget[0] - curTyph[0];
+                const dxT = pTarget[1] - curTyph[1];
+                const distT = Math.sqrt(dxT * dxT + dyT * dyT);
+                
+                const typhSpeed = 0.08; 
+                if (distT < typhSpeed) tStep++; 
+                else {
+                    curTyph[0] += (dyT / distT) * typhSpeed;
+                    curTyph[1] += (dxT / distT) * typhSpeed;
+                }
+            }
+
+            let intensityMod = 1.0;
+            if (curTyph[0] > 30) intensityMod -= (curTyph[0] - 30) * 0.08; 
+            else if (curTyph[0] < 22) intensityMod += 0.2;
+            if (isGrounded(curTyph[0], curTyph[1])) intensityMod *= 0.4;
+            intensityMod = Math.max(0.2, Math.min(intensityMod, 1.5));
+            
+            typhOuter.setRadius(400000 * Math.sqrt(intensityMod));
+            typhInner.setRadius(120000 * Math.sqrt(intensityMod));
+            typhOuter.setLatLng(curTyph);
+            typhInner.setLatLng(curTyph);
+            typhEye.setLatLng(curTyph);
+
+            let nLngShip = shipPos[1], nLngTyph = curTyph[1], nLngTarget = targetPos[1];
+            if (Math.abs(nLngShip - nLngTyph) > 180) nLngTyph += (nLngTyph < nLngShip) ? 360 : -360;
+            if (Math.abs(nLngShip - nLngTarget) > 180) nLngTarget += (nLngTarget < nLngShip) ? 360 : -360;
+
+            const dx = (nLngShip - nLngTyph) * 111 * Math.cos(curTyph[0] * Math.PI / 180); 
+            const dy = (shipPos[0] - curTyph[0]) * 111;
+            const distFromEye = Math.max(Math.sqrt(dx * dx + dy * dy), 0.1); 
+            
+            let windSpeed = 0;
+            if (distFromEye < 20) windSpeed = 3; 
+            else if (distFromEye < 120 * Math.sqrt(intensityMod)) windSpeed = (60 * (20 / distFromEye) + 20) * intensityMod; 
+            else if (distFromEye < 400 * Math.sqrt(intensityMod)) windSpeed = (25 * (150 / distFromEye)) * intensityMod;
+            else windSpeed = 5; 
+
+            const windAngle = Math.atan2(dy, dx) + Math.PI / 2 + 0.25;
+            const windV = { x: Math.cos(windAngle) * windSpeed, y: Math.sin(windAngle) * windSpeed };
+
+            let steerAngle = Math.atan2(targetPos[0] - shipPos[0], nLngTarget - nLngShip); 
+            let statusText = "대양 횡단 정상 항해 중";
+            let statusColor = "var(--ship)";
+
+            const dangerRadius = 350 * Math.sqrt(intensityMod);
+            const clearRadius = 500 * Math.sqrt(intensityMod);
+
+            if (distFromEye < dangerRadius) isEvadeMode = true; 
+            else if (distFromEye > clearRadius) isEvadeMode = false;
+
+            if (isEvadeMode) {
+                const dyT = typhPoints[tStep + 1] ? typhPoints[tStep + 1][0] - curTyph[0] : 1;
+                const dxT = typhPoints[tStep + 1] ? typhPoints[tStep + 1][1] - curTyph[1] : 0;
+                const typhHeading = Math.atan2(dyT, dxT);
+                const crossProduct = (dxT * dy) - (dyT * dx); 
+
+                if (crossProduct < 0) {
+                    steerAngle = typhHeading - (Math.PI / 2.2); 
+                    statusText = "비상 대피: 위험반원 우현 이탈"; statusColor = "var(--danger)";
+                } else {
+                    steerAngle = typhHeading + (Math.PI / 1.3); 
+                    statusText = "비상 우회: 가항반원 후방 회피"; statusColor = "var(--evade)";
+                }
+            }
+
+            let resistance = Math.pow(windSpeed / 15, 2); 
+            let basePower = isEvadeMode ? 0.35 : 0.25; 
+            let actualEnginePower = Math.max(0.02, basePower - (resistance * 0.008));
+            let overload = isEvadeMode ? 50 + (windSpeed * 1.5) : (windSpeed > 20 ? (windSpeed - 20) * 2 : 0);
+            actualEnginePower += (overload * 0.002);
+            const driftFactor = 0.001; 
+
+            let finalMoveY = 0, finalMoveX = 0;
+            let pathClear = false;
+
+            for (let offset = 0; offset <= Math.PI; offset += 0.2) {
+                for (let sign of [1, -1]) {
+                    if (offset === 0 && sign === -1) continue;
+                    let testAngle = steerAngle + (offset * sign);
+                    let tY = (Math.sin(testAngle) * actualEnginePower) + (windV.y * driftFactor);
+                    let tX = (Math.cos(testAngle) * actualEnginePower) + (windV.x * driftFactor);
+                    
+                    if (!isGrounded(shipPos[0] + (tY * 8), shipPos[1] + (tX * 8))) {
+                        finalMoveY = tY;
+                        finalMoveX = tX;
+                        pathClear = true;
+                        
+                        if (offset > 0 && !isEvadeMode) {
+                            statusText = "연안 항해: 육지 우회 기동 중";
+                            statusColor = "var(--safe)";
+                        }
+                        break;
+                    }
+                }
+                if (pathClear) break;
+            }
+
+            if (!pathClear) {
+                statusText = "항로 막힘 / 좌초 위험!";
+                statusColor = "var(--danger)";
+                actualEnginePower = 0; 
+            } else {
+                shipPos = [shipPos[0] + finalMoveY, shipPos[1] + finalMoveX];
+                
+                if (shipPos[1] > 180) shipPos[1] -= 360;
+                if (shipPos[1] < -180) shipPos[1] += 360;
+
+                if (windSpeed > 35 && distFromEye > 20) hull -= (windSpeed * 0.003); 
+            }
+
+            shipMkr.setLatLng(shipPos);
+            shipPath.addLatLng(shipPos);
+            
+            document.getElementById('txt-speed').innerText = actualEnginePower > 0 ? (Math.sqrt(finalMoveX**2 + finalMoveY**2) * 60).toFixed(1) + " kts" : "0.0 kts";
+            document.getElementById('txt-wind').innerText = windSpeed.toFixed(1) + " m/s";
+            document.getElementById('txt-status').innerText = statusText;
+            document.getElementById('txt-status').style.color = statusColor;
+            
+            document.getElementById('engine-bar').style.width = Math.min(100, (100 + overload) / 1.5) + "%";
+            document.getElementById('hull-bar').style.width = Math.max(0, hull) + "%";
+            if (hull < 30) document.getElementById('hull-bar').style.background = "var(--danger)";
+
+            let dYTarget = targetPos[0] - shipPos[0];
+            let dXTarget = nLngTarget - (shipPos[1] > 0 && nLngTarget < 0 ? shipPos[1] - 360 : (shipPos[1] < 0 && nLngTarget > 0 ? shipPos[1] + 360 : shipPos[1]));
+            let distToTarget = Math.sqrt(dYTarget**2 + dXTarget**2);
+
+            if (distToTarget < 0.8) {
+                clearInterval(sim);
+                document.getElementById('mission-text').innerHTML = "<b style='color:var(--safe)'>항해 완료: 목적 항구에 무사히 입항했습니다.</b>";
+                document.getElementById('txt-status').innerText = "ARRIVED SAFELY";
+            } else if (hull <= 0) {
+                clearInterval(sim);
+                document.getElementById('txt-status').innerText = "SHIPWRECKED";
+            }
+
+        }, 40);
+    }
 </script>
 </body>
 </html>
